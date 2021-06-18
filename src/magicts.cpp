@@ -131,12 +131,12 @@ handle_packet(struct libevdev *dev,
 				case ABS_MT_POSITION_X:
 				{
 					float x = (float)ev.value / maxx;
-					touches->y[*slot] = x;
+					touches->x[*slot] = x;
 				} break;
 				case ABS_MT_POSITION_Y:
 				{
 					float y = (float)ev.value / maxy;
-					touches->x[*slot] = y;
+					touches->y[*slot] = y;
 				} break;
 			}
 		}
