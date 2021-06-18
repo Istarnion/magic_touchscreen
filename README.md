@@ -16,6 +16,9 @@ event files (/dev/input/eventX) and looks for a file it can
 open and that supports ABS_MT events. It chooses the first
 available file that matches.
 
+Note that the running user must be part of the input group,
+or the application must be run using sudo.
+
 The update calls fills and returns a TouchData struct that
 holds info on up to 10 touches.
 
@@ -25,4 +28,6 @@ simply position and up/down for each touch
 The TouchData uses a normalized coordinate system with origo
 at the top left corner relative to the screens native orientation.
 Flipping and/or swapping axes is up to the client application.
+
+To test the library, just run the magicts_test.cpp file.
 
