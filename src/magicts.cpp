@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <libevdev/libevdev.h>
+#include <dirent.h>
 
 struct TouchscreenContext
 {
@@ -27,9 +28,9 @@ static bool
 supports_mt_events(libevdev *dev)
 {
 	bool result = libevdev_has_event_code(dev, EV_ABS, ABS_MT_SLOT)        &&
-		      libevdev_has_event_code(dev, EV_ABS, ABS_MT_TRACKING_ID) &&
-		      libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_X)  &&
-		      libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_Y);
+		libevdev_has_event_code(dev, EV_ABS, ABS_MT_TRACKING_ID) &&
+		libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_X)  &&
+		libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_Y);
 	return result;
 }
 
@@ -37,49 +38,44 @@ supports_mt_events(libevdev *dev)
 static int
 get_device(libevdev **dev)
 {
-	static const char *candidates[] = {
-		"/dev/input/event0",
-		"/dev/input/event1",
-		"/dev/input/event2",
-		"/dev/input/event3",
-		"/dev/input/event4",
-		"/dev/input/event5",
-		"/dev/input/event6",
-		"/dev/input/event7",
-		"/dev/input/event8",
-		"/dev/input/event9",
-		"/dev/input/event10"
-	};
-
-	int num_candidates = sizeof(candidates) / sizeof(candidates[0]);
-
 	int fd = 0;
 
-	for(int i=0; i<num_candidates; ++i)
-	{
-		fd = open(candidates[i], O_RDONLY);
-		if (fd >= 0) {
-			int rc = libevdev_new_from_fd(fd, dev);
-			if (rc < 0) {
-				fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
-				fd = 0;
-				break;
-			}
+    char candidate[32];
+    for(int i=0; i<100; ++i)
+    {
+        snprintf(candidate, 32, "/dev/input/event%d", i);
+        struct stat fileinfo;
+        stat(candidate, &fileinfo);
+        if(S_ISCHR(fileinfo.st_mode))
+        {
+            printf("%s\n", candidate);
+            fd = open(candidate, O_RDONLY);
+            if (fd >= 0)
+            {
+                int rc = libevdev_new_from_fd(fd, dev);
+                if (rc < 0)
+                {
+                    fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
+                    fd = 0;
+                    break;
+                }
 
-			if(supports_mt_events(*dev))
-			{
-				printf("Found wanted device at %s\n", candidates[i]);
-				break;
-			}
+                if(supports_mt_events(*dev))
+                {
+                    printf("Found wanted device at %s\n", candidate);
+                    break;
+                }
 
-			libevdev_free(*dev);
-			*dev = NULL;
-			fd = 0;
+                libevdev_free(*dev);
+                *dev = NULL;
+                fd = 0;
+            }
+            else
+            {
+                fd = 0;
+            }
 		}
-		else
-		{
-			fd = 0;
-		}
+
 	}
 
 	return fd;
@@ -108,9 +104,9 @@ read_event(libevdev *dev, struct input_event *ev)
 
 static void
 handle_packet(struct libevdev *dev,
-	      int *slot,
-	      float minx, float maxx, float miny, float maxy,
-	      TouchData *touches)
+		int *slot,
+		float minx, float maxx, float miny, float maxy,
+		TouchData *touches)
 {
 	struct input_event ev;
 	do
@@ -121,23 +117,23 @@ handle_packet(struct libevdev *dev,
 			switch(ev.code)
 			{
 				case ABS_MT_SLOT:
-				{
-					*slot = ev.value;
-				} break;
+					{
+						*slot = ev.value;
+					} break;
 				case ABS_MT_TRACKING_ID:
-				{
-					touches->id[*slot] = ev.value;
-				} break;
+					{
+						touches->id[*slot] = ev.value;
+					} break;
 				case ABS_MT_POSITION_X:
-				{
-					float x = (float)ev.value / maxx;
-					touches->x[*slot] = x;
-				} break;
+					{
+						float x = (float)ev.value / maxx;
+						touches->x[*slot] = x;
+					} break;
 				case ABS_MT_POSITION_Y:
-				{
-					float y = (float)ev.value / maxy;
-					touches->y[*slot] = y;
-				} break;
+					{
+						float y = (float)ev.value / maxy;
+						touches->y[*slot] = y;
+					} break;
 			}
 		}
 	}
@@ -170,13 +166,12 @@ magicts_update(void *ctxPtr)
 {
 	TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
 
-
 	while(libevdev_has_event_pending(ctx->dev))
 	{
 		handle_packet(ctx->dev,
-			      &ctx->slot,
-			      ctx->minx, ctx->maxx, ctx->miny, ctx->maxy,
-			      &ctx->touches);
+				&ctx->slot,
+				ctx->minx, ctx->maxx, ctx->miny, ctx->maxy,
+				&ctx->touches);
 	}
 
 	return ctx->touches;
