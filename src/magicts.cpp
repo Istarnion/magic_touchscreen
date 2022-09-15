@@ -143,22 +143,31 @@ handle_packet(struct libevdev *dev,
 void *
 magicts_initialize(void)
 {
-	TouchscreenContext *ctx = (TouchscreenContext *)malloc(sizeof(TouchscreenContext));
+    TouchscreenContext *ctx = (TouchscreenContext *)malloc(sizeof(TouchscreenContext));
 
-	if(ctx)
-	{
-		ctx->dev = NULL;
-		ctx->filedescriptor = get_device(&ctx->dev);
-		get_info(ctx->dev, ABS_MT_POSITION_X, &ctx->minx, &ctx->maxx);
-		get_info(ctx->dev, ABS_MT_POSITION_Y, &ctx->miny, &ctx->maxy);
+    if(ctx)
+    {
+        ctx->dev = NULL;
+        ctx->filedescriptor = get_device(&ctx->dev);
+        if(ctx->filedescriptor)
+        {
+            get_info(ctx->dev, ABS_MT_POSITION_X, &ctx->minx, &ctx->maxx);
+            get_info(ctx->dev, ABS_MT_POSITION_Y, &ctx->miny, &ctx->maxy);
 
-		for(int i=0; i<NUM_TOUCHES; ++i)
-		{
-			ctx->touches.id[i] = -1;
-		}
-	}
+            for(int i=0; i<NUM_TOUCHES; ++i)
+            {
+                ctx->touches.id[i] = -1;
+            }
+        }
+        else
+        {
+            fprintf(stderr, "No compatible multi touchscreen found\n");
+            free(ctx);
+            ctx = NULL;
+        }
+    }
 
-	return ctx;
+    return ctx;
 }
 
 TouchData
