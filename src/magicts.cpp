@@ -15,30 +15,30 @@
 
 struct TouchscreenContext
 {
-	int filedescriptor;
-	libevdev *dev;
-	float minx, miny;
-	float maxx, maxy;
+    int filedescriptor;
+    libevdev *dev;
+    float minx, miny;
+    float maxx, maxy;
 
-	int slot;
-	TouchData touches;
+    int slot;
+    TouchData touches;
 };
 
 static bool
 supports_mt_events(libevdev *dev)
 {
-	bool result = libevdev_has_event_code(dev, EV_ABS, ABS_MT_SLOT)        &&
-		libevdev_has_event_code(dev, EV_ABS, ABS_MT_TRACKING_ID) &&
-		libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_X)  &&
-		libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_Y);
-	return result;
+    bool result = libevdev_has_event_code(dev, EV_ABS, ABS_MT_SLOT)        &&
+        libevdev_has_event_code(dev, EV_ABS, ABS_MT_TRACKING_ID) &&
+        libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_X)  &&
+        libevdev_has_event_code(dev, EV_ABS, ABS_MT_POSITION_Y);
+    return result;
 }
 
 /* Return file descriptor for the opened device, or 0 */
 static int
 get_device(libevdev **dev)
 {
-	int fd = 0;
+    int fd = 0;
 
     char candidate[32];
     for(int i=0; i<100; ++i)
@@ -74,70 +74,69 @@ get_device(libevdev **dev)
             {
                 fd = 0;
             }
-		}
+        }
+    }
 
-	}
-
-	return fd;
+    return fd;
 }
 
 static void
 get_info(libevdev *dev, int axis, float *min, float *max)
 {
-	const struct input_absinfo *abs;
-	abs = libevdev_get_abs_info(dev, axis);
-	*min = (float)abs->minimum;
-	*max = (float)abs->maximum;
+    const struct input_absinfo *abs;
+    abs = libevdev_get_abs_info(dev, axis);
+    *min = (float)abs->minimum;
+    *max = (float)abs->maximum;
 }
 
 static void
 read_event(libevdev *dev, struct input_event *ev)
 {
-	int rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL|LIBEVDEV_READ_FLAG_BLOCKING, ev);
-	assert(rc == LIBEVDEV_READ_STATUS_SUCCESS || rc == LIBEVDEV_READ_STATUS_SYNC);
+    int rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL|LIBEVDEV_READ_FLAG_BLOCKING, ev);
+    assert(rc == LIBEVDEV_READ_STATUS_SUCCESS || rc == LIBEVDEV_READ_STATUS_SYNC);
 
-	if (rc == LIBEVDEV_READ_STATUS_SYNC)
-	{
-		/* Re-synchronize */
-	}
+    if (rc == LIBEVDEV_READ_STATUS_SYNC)
+    {
+        /* Re-synchronize */
+    }
 }
 
 static void
 handle_packet(struct libevdev *dev,
-		int *slot,
-		float minx, float maxx, float miny, float maxy,
-		TouchData *touches)
+        int *slot,
+        float minx, float maxx, float miny, float maxy,
+        TouchData *touches)
 {
-	struct input_event ev;
-	do
-	{
-		read_event(dev, &ev);
-		if(ev.type == EV_ABS)
-		{
-			switch(ev.code)
-			{
-				case ABS_MT_SLOT:
-					{
-						*slot = ev.value;
-					} break;
-				case ABS_MT_TRACKING_ID:
-					{
-						touches->id[*slot] = ev.value;
-					} break;
-				case ABS_MT_POSITION_X:
-					{
-						float x = (float)ev.value / maxx;
-						touches->x[*slot] = x;
-					} break;
-				case ABS_MT_POSITION_Y:
-					{
-						float y = (float)ev.value / maxy;
-						touches->y[*slot] = y;
-					} break;
-			}
-		}
-	}
-	while(ev.type != SYN_REPORT);
+    struct input_event ev;
+    do
+    {
+        read_event(dev, &ev);
+        if(ev.type == EV_ABS)
+        {
+            switch(ev.code)
+            {
+                case ABS_MT_SLOT:
+                {
+                    *slot = ev.value;
+                } break;
+                case ABS_MT_TRACKING_ID:
+                {
+                    touches->id[*slot] = ev.value;
+                } break;
+                case ABS_MT_POSITION_X:
+                {
+                    float x = (float)ev.value / maxx;
+                    touches->x[*slot] = x;
+                } break;
+                case ABS_MT_POSITION_Y:
+                {
+                    float y = (float)ev.value / maxy;
+                    touches->y[*slot] = y;
+                } break;
+            }
+        }
+    }
+    while(ev.type != SYN_REPORT);
 }
 
 void *
@@ -173,29 +172,29 @@ magicts_initialize(void)
 TouchData
 magicts_update(void *ctxPtr)
 {
-	TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
+    TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
 
-	while(libevdev_has_event_pending(ctx->dev))
-	{
-		handle_packet(ctx->dev,
-				&ctx->slot,
-				ctx->minx, ctx->maxx, ctx->miny, ctx->maxy,
-				&ctx->touches);
-	}
+    while(libevdev_has_event_pending(ctx->dev))
+    {
+        handle_packet(ctx->dev,
+                &ctx->slot,
+                ctx->minx, ctx->maxx, ctx->miny, ctx->maxy,
+                &ctx->touches);
+    }
 
-	return ctx->touches;
+    return ctx->touches;
 }
 
 void
 magicts_finalize(void *ctxPtr)
 {
-	if(ctxPtr)
-	{
-		TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
-		libevdev_free(ctx->dev);
-		close(ctx->filedescriptor);
-	}
+    if(ctxPtr)
+    {
+        TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
+        libevdev_free(ctx->dev);
+        close(ctx->filedescriptor);
+    }
 
-	free(ctxPtr);
+    free(ctxPtr);
 }
 
