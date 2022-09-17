@@ -172,6 +172,11 @@ magicts_initialize(void)
 TouchData
 magicts_update(void *ctxPtr)
 {
+    if(!ctxPtr)
+    {
+        return EMPTY_TOUCH_DATA;
+    }
+
     TouchscreenContext *ctx =  (TouchscreenContext *)ctxPtr;
 
     while(libevdev_has_event_pending(ctx->dev))
