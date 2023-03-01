@@ -187,6 +187,7 @@ magicts_initialize(void)
         ctx->filedescriptor = get_device(&ctx->dev);
         if(ctx->filedescriptor)
         {
+            ctx->slot = 0;
             get_info(ctx->dev, ABS_MT_POSITION_X, &ctx->minx, &ctx->maxx);
             get_info(ctx->dev, ABS_MT_POSITION_Y, &ctx->miny, &ctx->maxy);
 
