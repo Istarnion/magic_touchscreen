@@ -180,14 +180,13 @@ magicts_initialize(void)
 {
     struct TouchscreenContext *ctx =
         (struct TouchscreenContext *)malloc(sizeof(struct TouchscreenContext));
+    memset(ctx, 0, sizeof(struct TouchscreenContext));
 
     if(ctx)
     {
-        ctx->dev = NULL;
         ctx->filedescriptor = get_device(&ctx->dev);
         if(ctx->filedescriptor)
         {
-            ctx->slot = 0;
             get_info(ctx->dev, ABS_MT_POSITION_X, &ctx->minx, &ctx->maxx);
             get_info(ctx->dev, ABS_MT_POSITION_Y, &ctx->miny, &ctx->maxy);
 
