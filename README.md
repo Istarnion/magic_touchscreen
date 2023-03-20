@@ -36,7 +36,7 @@ open and that supports ABS_MT events. It chooses the first
 available file that matches.
 
 The update calls fills and returns a TouchData struct that
-holds info on up to 10 touches.
+holds info on up to 100 touches.
 
 Magic Touchscreen does not support pressure or tilt/angle,
 simply position and up/down for each touch
