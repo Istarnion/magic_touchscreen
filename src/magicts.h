@@ -1,7 +1,7 @@
 #ifndef MAGICTS_H_
 #define MAGICTS_H_
 
-#define NUM_TOUCHES 10
+#define NUM_TOUCHES 100
 
 struct TouchData
 {
