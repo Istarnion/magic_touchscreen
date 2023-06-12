@@ -5,7 +5,7 @@ rm -f magicts_test
 exit
 #endif
 
-#include "magicts.h"
+#include "src/magicts.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -26,6 +26,16 @@ main(int num_args, char *args[])
 
     void *magicts_context = magicts_initialize();
 
+    int screencount = magicts_get_screencount(magicts_context);
+    printf("%d screens initialized\n", screencount);
+
+    printf("Screens:\n");
+    char **screen_ids = magicts_get_screenids(magicts_context);
+    for(int i=0; i<screencount; ++i)
+    {
+        printf("  %s\n", screen_ids[i]);
+    }
+
     while(running)
     {
         TouchData touches = magicts_update(magicts_context);
@@ -33,10 +43,11 @@ main(int num_args, char *args[])
         {
             if(touches.id[i] >= 0)
             {
-                printf("[%d]: X: %1.2f, Y: %1.2f (%d)\n",
+                printf("[%d]: X: %1.2f, Y: %1.2f (%d, %s)\n",
                         i,
                         touches.x[i], touches.y[i],
-                        touches.id[i]);
+                        touches.id[i],
+                        touches.screen[i]);
             }
         }
 

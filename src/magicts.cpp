@@ -21,6 +21,16 @@ struct TouchscreenContext
 
     int slot;
     struct TouchData touches;
+    char screen_id[32];
+};
+
+#define MAX_TOUCHSCREENS 16
+
+struct MagicTouchContext
+{
+    int screencount;
+    char *screen_ids[MAX_TOUCHSCREENS];
+    TouchscreenContext screen_contexts[MAX_TOUCHSCREENS];
 };
 
 static bool
@@ -33,11 +43,17 @@ supports_mt_events(struct libevdev *dev)
     return result;
 }
 
-/* Return file descriptor for the opened device, or 0 */
-static int
-get_device(struct libevdev **dev)
+struct TouchscreenCandidate
 {
-    int fd = 0;
+    int filedescriptor;
+    struct libevdev *dev;
+};
+
+/* Return the number of candidates found */
+static int
+get_devices(int candidatecount, struct TouchscreenCandidate *candidates)
+{
+    int touchscreens_found = 0;
 
     /*
      * event stream files are found as /dev/input/eventN,
@@ -79,41 +95,46 @@ get_device(struct libevdev **dev)
         if(S_ISCHR(fileinfo.st_mode))
         {
             printf("Testing candidate %s...", candidate);
-            fd = open(candidate, O_RDONLY);
+            int fd = open(candidate, O_RDONLY);
             if (fd >= 0)
             {
-                int rc = libevdev_new_from_fd(fd, dev);
+                libevdev *dev = NULL;
+                int rc = libevdev_new_from_fd(fd, &dev);
                 if (rc < 0)
                 {
                     putchar('\n');
                     fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
-                    fd = 0;
-                    break;
                 }
 
-                if(supports_mt_events(*dev))
+                if(supports_mt_events(dev))
                 {
                     printf(" and it supports multitouch events. Using this one.\n");
-                    break;
+                    candidates[touchscreens_found].dev = dev;
+                    candidates[touchscreens_found].filedescriptor = fd;
+                    ++touchscreens_found;
+                    if(touchscreens_found < candidatecount)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
                 else
                 {
                     printf(" but it doesn't support multitouch events.\n");
+                    libevdev_free(dev);
                 }
-
-                libevdev_free(*dev);
-                *dev = NULL;
-                fd = 0;
             }
             else
             {
                 printf(" but it can't be opened.\n");
-                fd = 0;
             }
         }
     }
 
-    return fd;
+    return touchscreens_found;
 }
 
 static void
@@ -178,36 +199,74 @@ handle_packet(struct libevdev *dev,
 void *
 magicts_initialize(void)
 {
-    struct TouchscreenContext *ctx =
-        (struct TouchscreenContext *)malloc(sizeof(struct TouchscreenContext));
-    memset(ctx, 0, sizeof(struct TouchscreenContext));
+    struct MagicTouchContext *ctx =
+        (struct MagicTouchContext *)malloc(sizeof(struct MagicTouchContext));
+    memset(ctx, 0, sizeof(struct MagicTouchContext));
 
     if(ctx)
     {
-        ctx->filedescriptor = get_device(&ctx->dev);
-        if(ctx->filedescriptor)
-        {
-            get_info(ctx->dev, ABS_MT_POSITION_X, &ctx->minx, &ctx->maxx);
-            get_info(ctx->dev, ABS_MT_POSITION_Y, &ctx->miny, &ctx->maxy);
+        TouchscreenCandidate candidates[MAX_TOUCHSCREENS] = { 0 };
+        ctx->screencount = get_devices(MAX_TOUCHSCREENS, candidates);
 
-            for(int i=0; i<NUM_TOUCHES; ++i)
+        for(int i=0; i<ctx->screencount; ++i)
+        {
+            TouchscreenCandidate *candidate = &candidates[i];
+            TouchscreenContext *screen = &ctx->screen_contexts[i];
+
+            screen->filedescriptor = candidate->filedescriptor;
+            screen->dev = candidate->dev;
+
+            get_info(screen->dev, ABS_MT_POSITION_X, &screen->minx, &screen->maxx);
+            get_info(screen->dev, ABS_MT_POSITION_Y, &screen->miny, &screen->maxy);
+
+            strncpy(screen->screen_id, libevdev_get_uniq(screen->dev), 32);
+            ctx->screen_ids[i] = screen->screen_id;
+
+            for(int j=0; j<NUM_TOUCHES; ++j)
             {
-                ctx->touches.id[i] = -1;
+                screen->touches.id[j] = -1;
             }
         }
-        else
+
+        if(ctx->screencount <= 0)
         {
-            fprintf(stderr, "No compatible multi touchscreen found\n");
+            fprintf(stderr, "No compatible multi touchscreens found\n");
             free(ctx);
             ctx = NULL;
         }
     }
     else
     {
-        fprintf(stderr, "Failed to allocate TouchscreenContext\n");
+        fprintf(stderr, "Failed to allocate MagicTouchContext\n");
     }
 
     return ctx;
+}
+
+int
+magicts_get_screencount(void *ctxPtr)
+{
+    int result = 0;
+    if(ctxPtr)
+    {
+        struct MagicTouchContext *ctx = (MagicTouchContext *)ctxPtr;
+        result = ctx->screencount;
+    }
+
+    return result;
+}
+
+char **
+magicts_get_screenids(void *ctxPtr)
+{
+    char **result = 0;
+    if(ctxPtr)
+    {
+        struct MagicTouchContext *ctx = (MagicTouchContext *)ctxPtr;
+        result = ctx->screen_ids;
+    }
+
+    return result;
 }
 
 struct TouchData
@@ -224,17 +283,42 @@ magicts_update(void *ctxPtr)
         return emptyTouchData;
     }
 
-    struct TouchscreenContext *ctx =  (struct TouchscreenContext *)ctxPtr;
+    struct MagicTouchContext *ctx =  (struct MagicTouchContext *)ctxPtr;
 
-    while(libevdev_has_event_pending(ctx->dev))
+    int touchcount = 0;
+    TouchData touches = { 0 };
+
+    for(int i=0; i<NUM_TOUCHES; ++i)
     {
-        handle_packet(ctx->dev,
-                      &ctx->slot,
-                      ctx->minx, ctx->maxx, ctx->miny, ctx->maxy,
-                      &ctx->touches);
+        touches.id[i] = -1;
     }
 
-    return ctx->touches;
+    for(int i=0; i<ctx->screencount; ++i)
+    {
+        TouchscreenContext *screen = &ctx->screen_contexts[i];
+        while(libevdev_has_event_pending(screen->dev))
+        {
+            puts("Events");
+            handle_packet(screen->dev,
+                          &screen->slot,
+                          screen->minx, screen->maxx, screen->miny, screen->maxy,
+                          &screen->touches);
+        }
+
+        for(int j=0; j<NUM_TOUCHES; ++j)
+        {
+            if(screen->touches.id[j] >= 0)
+            {
+                strncpy(touches.screen[touchcount], screen->screen_id, 32);
+                touches.id[touchcount] = screen->touches.id[j];
+                touches.x[touchcount] = screen->touches.x[j];
+                touches.y[touchcount] = screen->touches.y[j];
+                ++touchcount;
+            }
+        }
+    }
+
+    return touches;
 }
 
 void
@@ -242,9 +326,15 @@ magicts_finalize(void *ctxPtr)
 {
     if(ctxPtr)
     {
-        struct TouchscreenContext *ctx =  (struct TouchscreenContext *)ctxPtr;
-        libevdev_free(ctx->dev);
-        close(ctx->filedescriptor);
+        struct MagicTouchContext *ctx =  (struct MagicTouchContext *)ctxPtr;
+        for(int i=0; i<ctx->screencount; ++i)
+        {
+            ctx->screen_ids[i] = 0;
+            libevdev_free(ctx->screen_contexts[i].dev);
+            close(ctx->screen_contexts[i].filedescriptor);
+
+        }
+
         free(ctxPtr);
     }
 }
