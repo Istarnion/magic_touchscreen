@@ -24,16 +24,21 @@ main(int num_args, char *args[])
 {
     signal(SIGINT, handle_sigint);
 
-    void *magicts_context = magicts_initialize();
-
-    int screencount = magicts_get_screencount(magicts_context);
-    printf("%d screens initialized\n", screencount);
+    int screencount = magicts_get_screencount();
+    printf("%d screen(s) connected\n", screencount);
 
     printf("Screens:\n");
-    char **screen_ids = magicts_get_screenids(magicts_context);
+    MagicTouchScreenScreenIDList screen_ids = magicts_get_screenids();
     for(int i=0; i<screencount; ++i)
     {
-        printf("  %s\n", screen_ids[i]);
+        printf("  %s\n", screen_ids.ids[i]);
+    }
+
+    void *magicts_context = magicts_initialize(NULL);
+    if(!magicts_context)
+    {
+        printf("Failed to initialize any touch screens!\n");
+        return 1;
     }
 
     while(running)

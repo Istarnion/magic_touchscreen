@@ -11,7 +11,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <libevdev/libevdev.h>
+#include <dirent.h>
 
+/*
+ * Context for a single touch screen
+ */
 struct TouchscreenContext
 {
     int filedescriptor;
@@ -24,15 +28,51 @@ struct TouchscreenContext
     char screen_id[32];
 };
 
-#define MAX_TOUCHSCREENS 16
-
+/*
+ * The library context. Just holds several touch screen contexts
+ */
 struct MagicTouchContext
 {
     int screencount;
-    char *screen_ids[MAX_TOUCHSCREENS];
     TouchscreenContext screen_contexts[MAX_TOUCHSCREENS];
 };
 
+/*
+ * This struct is means to be a list of all touch screens available.
+ * See get_devices() for where this list is created.
+ */
+struct TouchscreenCandidates
+{
+    int count;
+    char filepath[MAX_TOUCHSCREENS][64];
+    int fd[MAX_TOUCHSCREENS];
+    libevdev *dev[MAX_TOUCHSCREENS];
+    char id[MAX_TOUCHSCREENS][32];
+};
+
+/*
+ * Check if string starts with prefix
+ */
+static inline bool
+prefix_match(const char *prefix, const char *string)
+{
+    bool result = true;
+    while(*prefix && *string)
+    {
+        if(*prefix++ != *string++)
+        {
+            result = false;
+            break;
+        }
+    }
+
+    return result;
+}
+
+/*
+ * Check to see if the libevdev device supports the required multitouch
+ * event types.
+ */
 static bool
 supports_mt_events(struct libevdev *dev)
 {
@@ -43,100 +83,126 @@ supports_mt_events(struct libevdev *dev)
     return result;
 }
 
-struct TouchscreenCandidate
+/*
+ * Get a list of all multitouch devices on the system.
+ * The devices will be opened and initialized. See close_device_list()
+ * for a way to close them all, or call libevdev_free() and close() on
+ * each device you want to close (in that order).
+ */
+static TouchscreenCandidates
+get_devices(void)
 {
-    int filedescriptor;
-    struct libevdev *dev;
-};
+    TouchscreenCandidates candidates = { 0 };
 
-/* Return the number of candidates found */
-static int
-get_devices(int candidatecount, struct TouchscreenCandidate *candidates)
-{
-    int touchscreens_found = 0;
+    char candidate_name[64];
+    strcpy(candidate_name, "/dev/input/");
+    int candidate_name_offset = strlen(candidate_name);
 
-    /*
-     * event stream files are found as /dev/input/eventN,
-     * but we don't know N. So we loop from 0 and up until
-     * we find an event stream that supports the required
-     * event types, or we find no more event streams.
-     * The hardcoded '1000' is just for sanity, there are
-     * typically only ~10 event streams.
-     * Another option is to use dirent to iterate over the
-     * actual files in the directory, or glob to get all the
-     * files matching the pattern, but both are more complex/
-     * uses dynamic memory allocation, and offer little benefit.
-     * If someone reads this and knows a more elegant way of finding
-     * the wanted event streams, I'd love a PR :)
-     */
-    char candidate[32]; /* "/dev/input/event" is 16 characters */
-    for(int i=0; i<1000; ++i)
+    DIR *eventdir = opendir("/dev/input");
+    if(eventdir)
     {
-        snprintf(candidate, 32, "/dev/input/event%d", i);
-        struct stat fileinfo;
-        int error = stat(candidate, &fileinfo);
-
-        if(error)
+        errno = 0;
+        struct dirent *entry = NULL;
+        while((entry = readdir(eventdir)))
         {
-            /*
-            * ENOENT means the file path does not exist,
-            * so we've looped by all the eventNs and should
-            * give up. If the error is something else, we
-            * report on stderr
-            */
-            if(errno != ENOENT)
+            if(prefix_match("event", entry->d_name))
             {
-                fprintf(stderr, "Error testing event candidates: %s\n", strerror(errno));
-            }
+                strncpy(candidate_name+candidate_name_offset, entry->d_name, 64 - candidate_name_offset);
+                struct stat fileinfo;
+                int error = stat(candidate_name, &fileinfo);
 
-            break;
-        }
-
-        if(S_ISCHR(fileinfo.st_mode))
-        {
-            printf("Testing candidate %s...", candidate);
-            int fd = open(candidate, O_RDONLY);
-            if (fd >= 0)
-            {
-                libevdev *dev = NULL;
-                int rc = libevdev_new_from_fd(fd, &dev);
-                if (rc < 0)
+                if(error)
                 {
-                    putchar('\n');
-                    fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
+                    /*
+                    * ENOENT means the file path does not exist,
+                    * so we've looped by all the eventNs and should
+                    * give up. If the error is something else, we
+                    * report on stderr
+                    */
+                    if(errno != ENOENT)
+                    {
+                        fprintf(stderr, "Error testing event candidates: %s\n", strerror(errno));
+                    }
+
+                    break;
                 }
 
-                if(supports_mt_events(dev))
+                if(S_ISCHR(fileinfo.st_mode))
                 {
-                    printf(" and it supports multitouch events. Using this one.\n");
-                    candidates[touchscreens_found].dev = dev;
-                    candidates[touchscreens_found].filedescriptor = fd;
-                    ++touchscreens_found;
-                    if(touchscreens_found < candidatecount)
+                    printf("Testing candidate %s...", candidate_name);
+                    int fd = open(candidate_name, O_RDONLY);
+                    if (fd >= 0)
                     {
-                        continue;
+                        libevdev *dev = NULL;
+                        int rc = libevdev_new_from_fd(fd, &dev);
+                        if (rc < 0)
+                        {
+                            putchar('\n');
+                            fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
+                        }
+
+                        if(supports_mt_events(dev))
+                        {
+                            printf(" and it supports multitouch events. Using this one.\n");
+
+                            candidates.fd[candidates.count] = fd;
+                            candidates.dev[candidates.count] = dev;
+                            strncpy(candidates.id[candidates.count], libevdev_get_uniq(dev), 31);
+                            strcpy(candidates.filepath[candidates.count], candidate_name);
+                            ++candidates.count;
+
+                            if(candidates.count < MAX_TOUCHSCREENS)
+                            {
+                                continue;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            printf(" but it doesn't support multitouch events.\n");
+                            libevdev_free(dev);
+                            close(fd);
+                        }
                     }
                     else
                     {
-                        break;
+                        printf(" but it can't be opened.\n");
                     }
                 }
-                else
-                {
-                    printf(" but it doesn't support multitouch events.\n");
-                    libevdev_free(dev);
-                }
-            }
-            else
-            {
-                printf(" but it can't be opened.\n");
             }
         }
+
+        closedir(eventdir);
+    }
+    else
+    {
+        perror("Failed to open /dev/input/");
     }
 
-    return touchscreens_found;
+    return candidates;
 }
 
+/*
+ * Close all initialized devices in the TouchscreenCandidates list
+ */
+static void
+close_device_list(TouchscreenCandidates *candidates)
+{
+    for(int i=0; i<candidates->count; ++i)
+    {
+        libevdev_free(candidates->dev[i]);
+        close(candidates->fd[i]);
+    }
+
+    memset(candidates, 0, sizeof(TouchscreenCandidates));
+}
+
+/*
+ * Get info about the axis min and max values for a touchscreen
+ */
 static void
 get_info(struct libevdev *dev, int axis, float *min, float *max)
 {
@@ -146,6 +212,9 @@ get_info(struct libevdev *dev, int axis, float *min, float *max)
     *max = (float)abs->maximum;
 }
 
+/*
+ * Read the next event for a libevdev device.
+ */
 static void
 read_event(struct libevdev *dev, struct input_event *ev)
 {
@@ -158,6 +227,11 @@ read_event(struct libevdev *dev, struct input_event *ev)
     }
 }
 
+/*
+ * Fetch and handle a packet of events.
+ * libevdev packages multitouch events as SLOT, ID, X, Y, and REPORT
+ * so a single touch is at least 5 events.
+ */
 static void
 handle_packet(struct libevdev *dev,
               int *slot,
@@ -197,7 +271,7 @@ handle_packet(struct libevdev *dev,
 }
 
 void *
-magicts_initialize(void)
+magicts_initialize(const char *id)
 {
     struct MagicTouchContext *ctx =
         (struct MagicTouchContext *)malloc(sizeof(struct MagicTouchContext));
@@ -205,26 +279,32 @@ magicts_initialize(void)
 
     if(ctx)
     {
-        TouchscreenCandidate candidates[MAX_TOUCHSCREENS] = { 0 };
-        ctx->screencount = get_devices(MAX_TOUCHSCREENS, candidates);
+        TouchscreenCandidates candidates = get_devices();
 
-        for(int i=0; i<ctx->screencount; ++i)
+        for(int i=0; i<candidates.count; ++i)
         {
-            TouchscreenCandidate *candidate = &candidates[i];
-            TouchscreenContext *screen = &ctx->screen_contexts[i];
-
-            screen->filedescriptor = candidate->filedescriptor;
-            screen->dev = candidate->dev;
-
-            get_info(screen->dev, ABS_MT_POSITION_X, &screen->minx, &screen->maxx);
-            get_info(screen->dev, ABS_MT_POSITION_Y, &screen->miny, &screen->maxy);
-
-            strncpy(screen->screen_id, libevdev_get_uniq(screen->dev), 32);
-            ctx->screen_ids[i] = screen->screen_id;
-
-            for(int j=0; j<NUM_TOUCHES; ++j)
+            if(id == NULL || strcmp(id, candidates.id[i]) == 0)
             {
-                screen->touches.id[j] = -1;
+                TouchscreenContext *screen = &ctx->screen_contexts[ctx->screencount];
+                screen->filedescriptor = candidates.fd[i];
+                screen->dev = candidates.dev[i];
+
+                get_info(screen->dev, ABS_MT_POSITION_X, &screen->minx, &screen->maxx);
+                get_info(screen->dev, ABS_MT_POSITION_Y, &screen->miny, &screen->maxy);
+
+                strncpy(screen->screen_id, candidates.id[i], 32);
+
+                for(int j=0; j<NUM_TOUCHES; ++j)
+                {
+                    screen->touches.id[j] = -1;
+                }
+
+                ++ctx->screencount;
+            }
+            else
+            {
+                libevdev_free(candidates.dev[i]);
+                close(candidates.fd[i]);
             }
         }
 
@@ -244,27 +324,27 @@ magicts_initialize(void)
 }
 
 int
-magicts_get_screencount(void *ctxPtr)
+magicts_get_screencount()
 {
-    int result = 0;
-    if(ctxPtr)
-    {
-        struct MagicTouchContext *ctx = (MagicTouchContext *)ctxPtr;
-        result = ctx->screencount;
-    }
-
+    TouchscreenCandidates screens = get_devices();
+    int result = screens.count;
+    close_device_list(&screens);
     return result;
 }
 
-char **
-magicts_get_screenids(void *ctxPtr)
+struct MagicTouchScreenScreenIDList
+magicts_get_screenids()
 {
-    char **result = 0;
-    if(ctxPtr)
+    MagicTouchScreenScreenIDList result = { 0 };
+    TouchscreenCandidates screens = get_devices();
+    result.count = screens.count;
+
+    for(int i=0; i<screens.count; ++i)
     {
-        struct MagicTouchContext *ctx = (MagicTouchContext *)ctxPtr;
-        result = ctx->screen_ids;
+        strncpy(result.ids[i], screens.id[i], 31);
     }
+
+    close_device_list(&screens);
 
     return result;
 }
@@ -329,10 +409,8 @@ magicts_finalize(void *ctxPtr)
         struct MagicTouchContext *ctx =  (struct MagicTouchContext *)ctxPtr;
         for(int i=0; i<ctx->screencount; ++i)
         {
-            ctx->screen_ids[i] = 0;
             libevdev_free(ctx->screen_contexts[i].dev);
             close(ctx->screen_contexts[i].filedescriptor);
-
         }
 
         free(ctxPtr);
