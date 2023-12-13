@@ -378,7 +378,6 @@ magicts_update(void *ctxPtr)
         TouchscreenContext *screen = &ctx->screen_contexts[i];
         while(libevdev_has_event_pending(screen->dev))
         {
-            puts("Events");
             handle_packet(screen->dev,
                           &screen->slot,
                           screen->minx, screen->maxx, screen->miny, screen->maxy,
