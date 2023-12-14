@@ -129,7 +129,6 @@ get_devices(void)
 
                 if(S_ISCHR(fileinfo.st_mode))
                 {
-                    printf("Testing candidate %s...", candidate_name);
                     int fd = open(candidate_name, O_RDONLY);
                     if (fd >= 0)
                     {
@@ -137,14 +136,11 @@ get_devices(void)
                         int rc = libevdev_new_from_fd(fd, &dev);
                         if (rc < 0)
                         {
-                            putchar('\n');
                             fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
                         }
 
                         if(supports_mt_events(dev))
                         {
-                            printf(" and it supports multitouch events. Using this one.\n");
-
                             candidates.fd[candidates.count] = fd;
                             candidates.dev[candidates.count] = dev;
                             strncpy(candidates.id[candidates.count], libevdev_get_uniq(dev), 31);
@@ -162,14 +158,9 @@ get_devices(void)
                         }
                         else
                         {
-                            printf(" but it doesn't support multitouch events.\n");
                             libevdev_free(dev);
                             close(fd);
                         }
-                    }
-                    else
-                    {
-                        printf(" but it can't be opened.\n");
                     }
                 }
             }
@@ -299,6 +290,7 @@ magicts_initialize(const char *id)
                     screen->touches.id[j] = -1;
                 }
 
+                printf("Initialized touchscreen %s\n", screen->screen_id);
                 ++ctx->screencount;
             }
             else
@@ -341,11 +333,10 @@ magicts_get_screenids()
 
     for(int i=0; i<screens.count; ++i)
     {
-        strncpy(result.ids[i], screens.id[i], 31);
+        strncpy(result.ids + i * 32, screens.id[i], 31);
     }
 
     close_device_list(&screens);
-
     return result;
 }
 

@@ -15,7 +15,7 @@ struct TouchData
 struct MagicTouchScreenScreenIDList
 {
     int count;
-    char ids[MAX_TOUCHSCREENS][32];
+    char ids[MAX_TOUCHSCREENS * 32];
 };
 
 #ifdef __cplusplus

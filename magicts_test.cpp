@@ -1,7 +1,6 @@
 #if 0
 make
-clang "$0" -I src -o magicts_test libmagicts.so -Wl,-rpath -Wl,. && ./magicts_test
-rm -f magicts_test
+clang "$0" -I src -o magicts_test libmagicts.so -Wl,-rpath -Wl,.
 exit
 #endif
 
@@ -31,7 +30,7 @@ main(int num_args, char *args[])
     MagicTouchScreenScreenIDList screen_ids = magicts_get_screenids();
     for(int i=0; i<screencount; ++i)
     {
-        printf("  %s\n", screen_ids.ids[i]);
+        printf("  %s\n", screen_ids.ids + i*32);
     }
 
     void *magicts_context = magicts_initialize(NULL);
