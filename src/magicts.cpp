@@ -25,7 +25,7 @@ struct TouchscreenContext
 
     int slot;
     struct TouchData touches;
-    char screen_id[32];
+    char screen_id[SCREEN_ID_LENGTH];
 };
 
 /*
@@ -47,7 +47,7 @@ struct TouchscreenCandidates
     char filepath[MAX_TOUCHSCREENS][64];
     int fd[MAX_TOUCHSCREENS];
     libevdev *dev[MAX_TOUCHSCREENS];
-    char id[MAX_TOUCHSCREENS][32];
+    char id[MAX_TOUCHSCREENS][SCREEN_ID_LENGTH];
 };
 
 /*
@@ -283,7 +283,7 @@ magicts_initialize(const char *id)
                 get_info(screen->dev, ABS_MT_POSITION_X, &screen->minx, &screen->maxx);
                 get_info(screen->dev, ABS_MT_POSITION_Y, &screen->miny, &screen->maxy);
 
-                strncpy(screen->screen_id, candidates.id[i], 32);
+                strncpy(screen->screen_id, candidates.id[i], SCREEN_ID_LENGTH);
 
                 for(int j=0; j<NUM_TOUCHES; ++j)
                 {
@@ -333,7 +333,7 @@ magicts_get_screenids()
 
     for(int i=0; i<screens.count; ++i)
     {
-        strncpy(result.ids + i * 32, screens.id[i], 31);
+        strncpy(result.ids + i * SCREEN_ID_LENGTH, screens.id[i], 31);
     }
 
     close_device_list(&screens);
@@ -356,7 +356,6 @@ magicts_update(void *ctxPtr)
 
     struct MagicTouchContext *ctx =  (struct MagicTouchContext *)ctxPtr;
 
-    int touchcount = 0;
     TouchData touches = { 0 };
 
     for(int i=0; i<NUM_TOUCHES; ++i)
@@ -375,15 +374,30 @@ magicts_update(void *ctxPtr)
                           &screen->touches);
         }
 
+        /*
+         * Though we support NUM_TOUCHES touches on each screen,
+         * we also only expose NUM_TOUCHES externally, no matter
+         * how many screens we have. To support this, we divide the
+         * available external touches amongst the screens.
+         * This works as long as the assumption that the slots used
+         * for each screen is < NUM_TOUCHES / ctx->screencount holds,
+         * which it seems to do (as long as the hardware limit of touches
+         * times the number of screens is < NUM_TOUCHES).
+         * For NUM_TOUCHES == 100 and a hardware limit of 10 touches per
+         * screens, we're fine with up to 10 screens.
+         */
+        int offset = i * (NUM_TOUCHES / ctx->screencount);
         for(int j=0; j<NUM_TOUCHES; ++j)
         {
+            int slot = offset + j;
+            if(slot >= NUM_TOUCHES) break;
+
+            strncpy(touches.screen[slot], screen->screen_id, SCREEN_ID_LENGTH);
             if(screen->touches.id[j] >= 0)
             {
-                strncpy(touches.screen[touchcount], screen->screen_id, 32);
-                touches.id[touchcount] = screen->touches.id[j];
-                touches.x[touchcount] = screen->touches.x[j];
-                touches.y[touchcount] = screen->touches.y[j];
-                ++touchcount;
+                touches.id[slot] = screen->touches.id[j];
+                touches.x[slot] = screen->touches.x[j];
+                touches.y[slot] = screen->touches.y[j];
             }
         }
     }

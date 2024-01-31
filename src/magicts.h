@@ -3,10 +3,11 @@
 
 #define NUM_TOUCHES 100
 #define MAX_TOUCHSCREENS 16
+#define SCREEN_ID_LENGTH 32
 
 struct TouchData
 {
-    char screen[NUM_TOUCHES][32];
+    char screen[NUM_TOUCHES][SCREEN_ID_LENGTH];
     int id[NUM_TOUCHES];
     float x[NUM_TOUCHES];
     float y[NUM_TOUCHES];
@@ -15,7 +16,7 @@ struct TouchData
 struct MagicTouchScreenScreenIDList
 {
     int count;
-    char ids[MAX_TOUCHSCREENS * 32];
+    char ids[MAX_TOUCHSCREENS * SCREEN_ID_LENGTH];
 };
 
 #ifdef __cplusplus

@@ -43,6 +43,7 @@ main(int num_args, char *args[])
     while(running)
     {
         TouchData touches = magicts_update(magicts_context);
+        /*
         for(int i=0; i<NUM_TOUCHES; ++i)
         {
             if(touches.id[i] >= 0)
@@ -54,8 +55,9 @@ main(int num_args, char *args[])
                         touches.screen[i]);
             }
         }
+        */
 
-        usleep(166);
+        usleep(83);
     }
 
     magicts_finalize(magicts_context);
